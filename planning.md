@@ -132,6 +132,8 @@ For each tool, describe the specific failure mode you're handling and what the a
 
 ## A Complete Interaction (Step by Step)
 
+FitFindr is a multi-tool AI agent that helps users find secondhand clothing pieces and figure out how to wear them. When a user describes what they're looking for (e.g., "vintage graphic tee under $30"), the planning loop triggers `search_listings` to find matching items; if that returns nothing or fails, the agent informs the user and stops. If results are found, `suggest_outfit` evaluates the items against the user's existing wardrobe to build a outfit, and finally `create_fit_card` generates a shareable description of the full look — with each step handling its own failure mode gracefully (empty results, missing wardrobe data, or incomplete outfit input all result in a clear user-facing message rather than a crash).
+
 Write out what a full user interaction looks like from start to finish — tool call by tool call. Use a specific example query.
 
 **Example user query:** "I'm looking for a vintage graphic tee under $30. I mostly wear baggy jeans and chunky sneakers. What's out there and how would I style it?"
