@@ -69,8 +69,48 @@ def search_listings(
 
     Before writing code, fill in the Tool 1 section of planning.md.
     """
-    # Replace this with your implementation
-    return []
+    # Build the search keywords from the description
+    keywords = [w.lower().strip() for w in description.split() if w.strip()]
+    if not keywords:
+        return []
+
+    all_listings = load_listings()
+    scored = []
+
+    for listing in all_listings:
+        # ── Price filter ────────────────────────────────────────────────
+        if max_price is not None and listing.get("price") is not None:
+            if listing["price"] > max_price:
+                continue
+
+        # ── Size filter (case-insensitive, flexible match) ──────────────
+        if size is not None:
+            item_size = listing.get("size", "")
+            size_lower = size.lower().strip()
+            item_size_lower = item_size.lower().strip()
+            # Flexible match: "M" matches "S/M", "M/L", "One Size", etc.
+            # Exact match OR size is contained within item_size OR vice versa
+            if not (
+                size_lower == item_size_lower
+                or size_lower in item_size_lower
+                or item_size_lower in size_lower
+            ):
+                continue
+
+        # ── Relevance scoring: keyword overlap ──────────────────────────
+        searchable_text = " ".join([
+            listing.get("title", ""),
+            listing.get("description", ""),
+            *listing.get("style_tags", []),
+        ]).lower()
+
+        score = sum(1 for kw in keywords if kw in searchable_text)
+        if score > 0:
+            scored.append((score, listing))
+
+    # Sort by score descending; preserve order within same score
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [item for _, item in scored]
 
 
 # ── Tool 2: suggest_outfit ────────────────────────────────────────────────────
@@ -100,8 +140,58 @@ def suggest_outfit(new_item: dict, wardrobe: dict) -> str:
 
     Before writing code, fill in the Tool 2 section of planning.md.
     """
-    # Replace this with your implementation
-    return ""
+    # ── Build item summary ──────────────────────────────────────────────
+    item_summary = (
+        f"Item: {new_item.get('title', 'Unknown')}\n"
+        f"Description: {new_item.get('description', '')}\n"
+        f"Category: {new_item.get('category', '')}\n"
+        f"Style tags: {', '.join(new_item.get('style_tags', []))}\n"
+        f"Colors: {', '.join(new_item.get('colors', []))}\n"
+        f"Price: ${new_item.get('price', 0):.2f} on {new_item.get('platform', 'N/A')}\n"
+        f"Condition: {new_item.get('condition', '')}"
+    )
+
+    if wardrobe.get("items"):
+        wardrobe_lines = []
+        for w_item in wardrobe["items"]:
+            notes = f" ({w_item.get('notes', '')})" if w_item.get("notes") else ""
+            wardrobe_lines.append(
+                f"- {w_item['name']} (category: {w_item['category']}, "
+                f"colors: {', '.join(w_item.get('colors', []))}, "
+                f"tags: {', '.join(w_item.get('style_tags', []))}){notes}"
+            )
+        wardrobe_text = "\n".join(wardrobe_lines)
+        prompt = (
+            f"You are a fashion stylist helping a user style a new thrifted item.\n\n"
+            f"{item_summary}\n\n"
+            f"The user's existing wardrobe:\n{wardrobe_text}\n\n"
+            f"Suggest 1–2 specific outfit combinations using the new item above "
+            f"and named pieces from the user's wardrobe. "
+            f"Name the specific wardrobe pieces in your suggestion. "
+            f"Keep it to 2–5 sentences and sound natural."
+        )
+    else:
+        # Empty wardrobe — give general styling advice
+        prompt = (
+            f"You are a fashion stylist. A user is considering buying this item:\n\n"
+            f"{item_summary}\n\n"
+            f"The user hasn't added any items to their wardrobe yet. "
+            f"Give 1–2 sentences of general styling advice: "
+            f"what kinds of pieces pair well with this item, what vibe it suits, "
+            f"and how to style it without referencing specific named pieces."
+        )
+
+    try:
+        client = _get_groq_client()
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=300,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception:
+        return "Couldn't generate an outfit suggestion right now — try again in a moment."
 
 
 # ── Tool 3: create_fit_card ───────────────────────────────────────────────────
@@ -133,5 +223,32 @@ def create_fit_card(outfit: str, new_item: dict) -> str:
 
     Before writing code, fill in the Tool 3 section of planning.md.
     """
-    # Replace this with your implementation
-    return ""
+    if not outfit or not outfit.strip():
+        return "Couldn't create a fit card — missing outfit data."
+
+    item_name = new_item.get("title", "this item")
+    item_price = new_item.get("price", 0)
+    platform = new_item.get("platform", "the app")
+
+    prompt = (
+        f"Write a short, casual Instagram/TikTok-style caption (2–4 sentences) "
+        f"for this OOTD post. It should feel like a real person posting, not a product "
+        f"description. Mention the item name ('{item_name}'), price (${item_price:.2f}), "
+        f"and platform ('{platform}') naturally — once each. "
+        f"Describe the outfit vibe in specific terms. "
+        f"Make it sound different each time.\n\n"
+        f"Outfit suggestion: {outfit}\n"
+        f"New item: {item_name} — ${item_price:.2f} on {platform}"
+    )
+
+    try:
+        client = _get_groq_client()
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.8,
+            max_tokens=150,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception:
+        return "Couldn't generate a fit card right now — try again in a moment."
